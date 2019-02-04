@@ -201,6 +201,7 @@ public class NextLevelSession {
     private let NextLevelSessionSpecificKey = DispatchSpecificKey<()>()
     
     var buffers:[CMSampleBuffer] = []
+    var isAppending = false
     
     // MARK: - object lifecycle
     
@@ -458,8 +459,6 @@ extension NextLevelSession {
         completionHandler(false)
     }
     
-    var isAppending = false
-    
     /// Append audio sample buffer to a session for recording.
     ///
     /// - Parameters:
@@ -540,6 +539,7 @@ extension NextLevelSession {
             self._audioInput = nil
             self._pixelBufferAdapter = nil
             self.buffers = []
+            self.isAppending = false
             self._videoConfiguration = nil
             self._audioConfiguration = nil
         }
