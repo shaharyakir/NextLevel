@@ -479,19 +479,13 @@ extension NextLevelSession {
         
         var hadFailure = false
         
-        var currentBuffers = self.buffers
+        let currentBuffers = self.buffers
         
         currentBuffers.forEach { [weak self] buffer in self?.buffers.removeAll(where: { buffer === $0 }) }
         
         var failedBuffers:[CMSampleBuffer] = []
         
-        var debugCount = 0
-        
         currentBuffers.forEach { buffer in
-            
-            NSLog("Shahar adding buffer number \(debugCount)")
-            
-            debugCount += 1
             
             isAppending = true
 
