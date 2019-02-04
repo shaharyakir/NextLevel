@@ -200,6 +200,8 @@ public class NextLevelSession {
     private let NextLevelSessionQueueIdentifier = "engineering.NextLevel.sessionQueue"
     private let NextLevelSessionSpecificKey = DispatchSpecificKey<()>()
     
+    var buffers:[CMSampleBuffer] = []
+    
     // MARK: - object lifecycle
     
     /// Initialize using a specific dispatch queue.
@@ -456,6 +458,8 @@ extension NextLevelSession {
         completionHandler(false)
     }
     
+    var isAppending = false
+    
     /// Append audio sample buffer to a session for recording.
     ///
     /// - Parameters:
@@ -464,29 +468,68 @@ extension NextLevelSession {
     public func appendAudio(withSampleBuffer sampleBuffer: CMSampleBuffer, completionHandler: @escaping NextLevelSessionAppendSampleBufferCompletionHandler) {
         self.startSessionIfNecessary(timestamp: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
         
-        let duration = CMSampleBufferGetDuration(sampleBuffer)
-        if let adjustedBuffer = CMSampleBuffer.createSampleBuffer(fromSampleBuffer: sampleBuffer, withTimeOffset: self._timeOffset, duration: duration) {
-            let presentationTimestamp = CMSampleBufferGetPresentationTimeStamp(adjustedBuffer)
-            let lastTimestamp = CMTimeAdd(presentationTimestamp, duration)
+        self.buffers.append(sampleBuffer)
+        
+        guard !isAppending else {
             
-            self._audioQueue.async {
-                if let audioInput = self._audioInput,
-                    audioInput.isReadyForMoreMediaData,
-                    audioInput.append(adjustedBuffer) {
-                    self._lastAudioTimestamp = lastTimestamp
-                    
-                    if !self.currentClipHasVideo {
-                        self._currentClipDuration = CMTimeSubtract(lastTimestamp, self._startTimestamp)
-                    }
-                    
-                    self._currentClipHasAudio = true
-                    
-                    completionHandler(true)
-                } else {
-                    completionHandler(false)
-                }
-            }
+            completionHandler(true)
+            
+            return
+            
         }
+        
+        var hadFailure = false
+        
+        var currentBuffers = self.buffers
+        
+        currentBuffers.forEach { [weak self] buffer in self?.buffers.removeAll(where: { buffer === $0 }) }
+        
+        var failedBuffers:[CMSampleBuffer] = []
+        
+        var debugCount = 0
+        
+        currentBuffers.forEach { buffer in
+            
+            NSLog("Shahar adding buffer number \(debugCount)")
+            
+            debugCount += 1
+            
+            isAppending = true
+
+            let duration = CMSampleBufferGetDuration(buffer)
+            
+            if let adjustedBuffer = CMSampleBuffer.createSampleBuffer(fromSampleBuffer: buffer, withTimeOffset: self._timeOffset, duration: duration) {
+                let presentationTimestamp = CMSampleBufferGetPresentationTimeStamp(adjustedBuffer)
+                let lastTimestamp = CMTimeAdd(presentationTimestamp, duration)
+                
+                    if let audioInput = self._audioInput,
+                        audioInput.isReadyForMoreMediaData,
+                        audioInput.append(adjustedBuffer) {
+                        self._lastAudioTimestamp = lastTimestamp
+                        
+                        if !self.currentClipHasVideo {
+                            self._currentClipDuration = CMTimeSubtract(lastTimestamp, self._startTimestamp)
+                        }
+                        
+                        self._currentClipHasAudio = true
+                        
+                    } else {
+                        
+                        failedBuffers.append(buffer)
+                        
+                        hadFailure = true
+                        
+                    }
+            }
+            
+        }
+        
+        self.buffers.insert(contentsOf: failedBuffers, at: 0)
+        
+        isAppending = false
+        
+        completionHandler(!hadFailure)
+        
     }
     
     /// Resets a session to the initial state.
@@ -496,7 +539,7 @@ extension NextLevelSession {
             self._videoInput = nil
             self._audioInput = nil
             self._pixelBufferAdapter = nil
-            
+            self.buffers = []
             self._videoConfiguration = nil
             self._audioConfiguration = nil
         }
